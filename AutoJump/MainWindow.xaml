@@ -3,10 +3,17 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:AutoJump"
+        xmlns:local="clr-namespace:AutoJump" Closed="Window_Closed"
         mc:Ignorable="d"
-        Title="MainWindow" Height="350" Width="525">
+        Title="MainWindow" Height="420" Width="525">
     <Grid>
-        
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="239*"/>
+            <ColumnDefinition Width="278*"/>
+        </Grid.ColumnDefinitions>
+        <Button Click="Button_Click" Margin="100,33,99,328" Grid.Column="1"/>
+        <Image Name="imageBox" Height="384" Width="216"/>
+        <Button Click="BtnStart_Click" Content="开始" Margin="40,94,159,267" Grid.Column="1"/>
+        <Button Click="BtnStop_Click" Content="停止" Margin="40,161,159,200" Grid.Column="1"/>
     </Grid>
 </Window>
