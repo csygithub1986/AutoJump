@@ -28,31 +28,32 @@ namespace AutoJump
         AdbCmdGenerator adbGenerator;
         //string lastPngFile;
         string currentPngFile = "autojump.png";
+        double jumpParam = 2.0;//弹跳系数
+
+        bool autoJump = false;//表示自动跳线程是否继续
+
         public MainWindow()
         {
             InitializeComponent();
-            //cmdHelper = new CmdHelper();
-            //adbGenerator = new AdbCmdGenerator();
+            cmdHelper = new CmdHelper();
+            adbGenerator = new AdbCmdGenerator();
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        private void Jump(int time)
         {
-            int upX;
-            ReadColor(out upX);
-            Console.WriteLine(upX);
-            //List<string> list = adbGenerator.SendDown(100, 100);
-            //foreach (var item in list)
-            //{
-            //    cmdHelper.WriteCmd(item);
-            //    Thread.Sleep(100);
-            //}
-            ////Thread.Sleep(400);
-            //list = adbGenerator.SendUp();
-            //foreach (var item in list)
-            //{
-            //    cmdHelper.WriteCmd(item);
-            //    Thread.Sleep(100);
-            //}
+            List<string> list = adbGenerator.SendDown(500, 500);
+            foreach (var item in list)
+            {
+                cmdHelper.WriteCmd(item);
+                Thread.Sleep(100);
+            }
+            Thread.Sleep(time > 200 ? time - 200 : time);
+            list = adbGenerator.SendUp();
+            foreach (var item in list)
+            {
+                cmdHelper.WriteCmd(item);
+                Thread.Sleep(100);
+            }
         }
 
         private void Window_Closed(object sender, EventArgs e)
@@ -62,20 +63,63 @@ namespace AutoJump
 
         private void BtnStart_Click(object sender, RoutedEventArgs e)
         {
-            ScreenCap();
-            FileInfo imageFile = new FileInfo(Environment.CurrentDirectory + "/" + currentPngFile);
-            imageBox.Source = new BitmapImage(new Uri(imageFile.FullName, UriKind.Absolute));
+            btnStart.IsEnabled = false;
+            btnStop.IsEnabled = true;
+            autoJump = true;
+            Task.Factory.StartNew(() =>
+            {
+                while (autoJump)
+                {
+                    //截图
+                    ScreenCap();
+                    FileInfo imageFile = new FileInfo(Environment.CurrentDirectory + "/" + currentPngFile);
+                    //调试用
+                    //Dispatcher.BeginInvoke(new Action(() =>
+                    //{
+                    //    imageBox.Source = new BitmapImage(new Uri(imageFile.FullName, UriKind.Absolute));
+                    //}));
+                    //解析图像
+                    int upX, downX;
+                    AnalyseImage(imageFile, out upX, out downX);
+                    if (upX == -1 || downX == -1)
+                    {
+                        autoJump = false;
+                        MessageBox.Show("图像解析错误");
+                        Dispatcher.Invoke(() =>
+                        {
+                            btnStart.IsEnabled = true;
+                            btnStop.IsEnabled = false;
+                        });
+                        return;
+                    }
+                    //计算时间
+                    int time = (int)(Math.Abs(upX - downX) * jumpParam);
+                    //跳
+                    Jump(time);
+                    if (!autoJump)
+                    {
+                        break;
+                    }
+                    Thread.Sleep(2000);
+                }
+                Dispatcher.Invoke(() =>
+                {
+                    btnStart.IsEnabled = true;
+                    btnStop.IsEnabled = false;
+                });
+            });
 
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)
         {
-
+            autoJump = false;
         }
 
         //截屏
         private void ScreenCap()
         {
+            //currentPngFile = DateTime.Now.Ticks.ToString() + ".png";
             List<string> list = adbGenerator.ScreenCap(currentPngFile);
             foreach (var item in list)
             {
@@ -86,31 +130,31 @@ namespace AutoJump
 
 
         //操作图像
-
-        public void ReadColor(out int upX)
+        public void AnalyseImage(FileInfo imageFile, out int upX, out int downX)
         {
-            Bitmap b = new Bitmap(@"C:\Users\陈帅宇\Documents\Tencent Files\274322346\FileRecv\MobileFile\a.png");
-            BitmapData bData = b.LockBits(new System.Drawing.Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+            upX = -1;
+            downX = -1;
+            Bitmap bitmap = new Bitmap(imageFile.FullName);
+            BitmapData bData = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
             unsafe
             {
-
+                //找“棋盘”中心
                 for (int y = 320; y < 960; y++)
                 {
-                    //int r =
                     byte* color0 = (byte*)bData.Scan0 + y * bData.Stride;
-                    int R0 = *(color0 + 2);
-                    int G0 = *(color0 + 1);
-                    int B0 = *color0;
+                    int r0 = *(color0 + 2);
+                    int g0 = *(color0 + 1);
+                    int b0 = *color0;
                     bool hasFound = false;
                     int min = 0;
                     int max = 0;
-                    for (int x = 0; x < b.Width; x++)
+                    for (int x = 0; x < bitmap.Width; x++)
                     {
                         byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
-                        int R = *(color + 2);
-                        int G = *(color + 1);
-                        int B = *color;
-                        if (R0 != R || G0 != G || B0 != B)
+                        int r = *(color + 2);
+                        int g = *(color + 1);
+                        int b = *color;
+                        if (r0 != r || g0 != g || b0 != b)
                         {
                             max = x;
                             if (hasFound == false)
@@ -122,13 +166,65 @@ namespace AutoJump
                         else if (hasFound)
                         {
                             upX = (min + max) / 2;
-                            return;
+                            break;
                         }
                     }
+                    if (hasFound)
+                    {
+                        break;
+                    }
+                }
+                //找“棋子”底座中心
+                int rLeft = 43, gLeft = 43, bLeft = 73;
+                int rRight = 58, gRight = 54, bRight = 81;
+                int leftX = 0, rightX = 0, leftY = -1, rightY = -1;
+                for (int x = 0; x < bitmap.Width; x++)
+                {
+                    for (int y = 960 - 1; y >= 640; y--)
+                    {
+                        byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                        int r = *(color + 2);
+                        int g = *(color + 1);
+                        int b = *color;
+                        if (rLeft == r && gLeft == g && bLeft == b)
+                        {
+                            leftX = x;
+                            leftY = y;
+                            break;
+                        }
+                    }
+                    if (leftY != -1)
+                    {
+                        break;
+                    }
+                }
+                for (int x = bitmap.Width - 1; x >= 0; x--)
+                {
+                    for (int y = 960 - 1; y >= 640; y--)
+                    {
+                        byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                        int r = *(color + 2);
+                        int g = *(color + 1);
+                        int b = *color;
+                        if (rRight == r && gRight == g && bRight == b)
+                        {
+                            rightX = x;
+                            rightY = y;
+                            break;
+                        }
+                    }
+                    if (rightY != -1)
+                    {
+                        break;
+                    }
+                }
+                if (leftY != -1 && rightY != -1 && Math.Abs(leftY - rightY) < 5)
+                {
+                    downX = (leftX + rightX) / 2;
                 }
             }
-            upX = 0;
-            b.UnlockBits(bData);
+            bitmap.UnlockBits(bData);
+            bitmap.Dispose();
         }
     }
 

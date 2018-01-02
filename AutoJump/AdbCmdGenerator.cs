@@ -37,8 +37,8 @@ namespace AutoJump
         public List<string> ScreenCap(string fileName)
         {
             List<string> list = new List<string>();
-            list.Add("adb shell screencap - p /storage/sdcard0/autojump.png");
-            list.Add("adb pull /storage/sdcard0/autojump.png " + fileName + ".png");
+            list.Add("adb shell screencap -p /storage/sdcard0/autojump.png");
+            list.Add("adb pull /storage/sdcard0/autojump.png " + fileName);
             return list;
         }
     }

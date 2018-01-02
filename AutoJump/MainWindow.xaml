@@ -11,9 +11,8 @@
             <ColumnDefinition Width="239*"/>
             <ColumnDefinition Width="278*"/>
         </Grid.ColumnDefinitions>
-        <Button Click="Button_Click" Margin="100,33,99,328" Grid.Column="1"/>
         <Image Name="imageBox" Height="384" Width="216"/>
-        <Button Click="BtnStart_Click" Content="开始" Margin="40,94,159,267" Grid.Column="1"/>
-        <Button Click="BtnStop_Click" Content="停止" Margin="40,161,159,200" Grid.Column="1"/>
+        <Button Click="BtnStart_Click" Name="btnStart" Content="开始" Margin="40,60,0,0" Grid.Column="1" HorizontalAlignment="Left" Width="200" Height="50" VerticalAlignment="Top"/>
+        <Button Click="BtnStop_Click" Name="btnStop" Content="停止" IsEnabled="False" Margin="40,157,0,0" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Width="200" Height="50"/>
     </Grid>
 </Window>
