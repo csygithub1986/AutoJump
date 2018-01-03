@@ -20,6 +20,7 @@ namespace AutoJump
         double jumpParam = 2.05;//弹跳系数
         //double jumpParamAdjust;//弹跳系数
         double widthHeightRate = 1.7218;//长宽比
+        double standardWidth = 720;//基准宽度
 
         bool autoJump = false;//表示自动跳线程是否继续
 
@@ -63,8 +64,8 @@ namespace AutoJump
 
 
                     //解析图像
-                    int centerX, centerY, pieceX, pieceY;
-                    AnalyseImage(imageFile, out centerX, out centerY, out pieceX, out pieceY);
+                    int centerX, centerY, pieceX, pieceY, imageWidth;
+                    AnalyseImage(imageFile, out centerX, out centerY, out pieceX, out pieceY, out imageWidth);
                     if (pieceX == -1 || pieceY == -1)
                     {
                         autoJump = false;
@@ -78,13 +79,13 @@ namespace AutoJump
                     }
                     Dispatcher.Invoke(new Action(() =>
                     {
-                        Canvas.SetLeft(gridFrom, pieceX * 0.5);
-                        Canvas.SetTop(gridFrom, pieceY * 0.5);
-                        Canvas.SetLeft(gridTo, centerX * 0.5);
-                        Canvas.SetTop(gridTo, centerY * 0.5);
+                        Canvas.SetLeft(gridFrom, pieceX * 0.5 * standardWidth / imageWidth);
+                        Canvas.SetTop(gridFrom, pieceY * 0.5 * standardWidth / imageWidth);
+                        Canvas.SetLeft(gridTo, centerX * 0.5 * standardWidth / imageWidth);
+                        Canvas.SetTop(gridTo, centerY * 0.5 * standardWidth / imageWidth);
                     }));
                     //计算时间
-                    int time = (int)(Math.Sqrt((centerX - pieceX) * (centerX - pieceX) + (centerY - pieceY) * (centerY - pieceY)) * jumpParam);
+                    int time = (int)(Math.Sqrt((centerX - pieceX) * (centerX - pieceX) + (centerY - pieceY) * (centerY - pieceY)) * jumpParam * standardWidth / imageWidth);
                     //跳
                     cmdHelper.WriteCmd("adb shell input swipe 500 500 500 700 " + time);
 
@@ -92,7 +93,7 @@ namespace AutoJump
                     {
                         break;
                     }
-                    Thread.Sleep(2500);
+                    Thread.Sleep(4000);
                 }
                 Dispatcher.Invoke(() =>
                 {
@@ -100,7 +101,6 @@ namespace AutoJump
                     btnStop.IsEnabled = false;
                 });
             });
-
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)
@@ -112,13 +112,13 @@ namespace AutoJump
         private void ScreenCap()
         {
             cmdHelper.WriteCmd("adb shell screencap -p /storage/sdcard0/autojump.png");//截图
-            Thread.Sleep(2000);
+            Thread.Sleep(3000);
             cmdHelper.WriteCmd("adb pull /storage/sdcard0/autojump.png " + currentPngFile);//复制
             Thread.Sleep(1500);
         }
 
         //分析图像
-        public void AnalyseImage(FileInfo imageFile, out int centerX, out int centerY, out int pieceX, out int pieceY)
+        public void AnalyseImage(FileInfo imageFile, out int centerX, out int centerY, out int pieceX, out int pieceY, out int imageWidth)
         {
             centerX = -1;
             centerY = -1;
@@ -126,6 +126,7 @@ namespace AutoJump
             pieceY = -1;
             Bitmap bitmap = new Bitmap(imageFile.FullName);
             BitmapData bData = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+            imageWidth = bitmap.Width;
             unsafe
             {
                 #region 找“小人”底座中心
@@ -135,7 +136,7 @@ namespace AutoJump
                     int leftX = 0, rightX = 0, leftY = -1, rightY = -1;
                     for (int x = 0; x < bitmap.Width; x++)
                     {
-                        for (int y = 960 - 1; y >= 640; y--)
+                        for (int y = bitmap.Height * 3 / 4 - 1; y >= bitmap.Height / 2; y--)
                         {
                             byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
                             byte r = *(color + 2);
@@ -155,7 +156,7 @@ namespace AutoJump
                     }
                     for (int x = bitmap.Width - 1; x >= 0; x--)
                     {
-                        for (int y = 960 - 1; y >= 640; y--)
+                        for (int y = bitmap.Height * 3 / 4 - 1; y >= bitmap.Height / 2; y--)
                         {
                             byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
                             byte r = *(color + 2);
@@ -173,7 +174,7 @@ namespace AutoJump
                             break;
                         }
                     }
-                    if (leftY != -1 && rightY != -1 && Math.Abs(leftY - rightY) < 5)
+                    if (leftY != -1 && rightY != -1 && Math.Abs(leftY - rightY) < 10)
                     {
                         pieceX = (leftX + rightX) / 2;
                         pieceY = Math.Min(leftY, rightY);
@@ -188,7 +189,7 @@ namespace AutoJump
                     int leftX = 0;
                     int rightX = 0;
                     System.Windows.Media.Color colorMain = new System.Windows.Media.Color();
-                    for (int y = 320; y < 960; y++)
+                    for (int y = bitmap.Height / 4; y < bitmap.Height * 3 / 4; y++)
                     {
                         byte* color0 = (byte*)bData.Scan0 + y * bData.Stride;
                         byte r0 = *(color0 + 2);
@@ -201,9 +202,9 @@ namespace AutoJump
                             byte r = *(color + 2);
                             byte g = *(color + 1);
                             byte b = *color;
-                            if (r0 != r || g0 != g || b0 != b)
+                            if (Math.Abs(r0 - r) > 2 || Math.Abs(g0 - g) > 2 || Math.Abs(b0 - b) > 2)
                             {
-                                if (Math.Abs(x - pieceX) < 25)
+                                if (Math.Abs(x - pieceX) < (int)(25 * bitmap.Width / standardWidth))
                                 {
                                     //当小人的头比新“盒子”高时，把“小人”的头避开
                                     continue;
@@ -244,7 +245,7 @@ namespace AutoJump
                         lastColorList.Add(new System.Drawing.Point(x, upY));
                     }
 
-                    for (int y = upY + 1; y < 960; y++)
+                    for (int y = upY + 1; y < bitmap.Height * 3 / 4; y++)
                     {
                         List<System.Drawing.Point> currentColorList = new List<System.Drawing.Point>();
                         //搜索左边
@@ -324,15 +325,15 @@ namespace AutoJump
                     //限制条件
                     double width = rightX - leftX;
                     double height = downY - upY;
-                    if (width > 360 || width < 45 || width / height > widthHeightRate * 1.25 || width / height < widthHeightRate / 1.25)
+                    if (width > 360 * bitmap.Width / standardWidth || width < 45 * bitmap.Width / standardWidth || width / height > widthHeightRate * 1.25 || width / height < widthHeightRate / 1.25)
                     {
                         //判断出错，保险起见，只能以顶点为参考点，减去保守的固定值
-                        centerY = upY + 70;
+                        centerY = upY + (int)(70 * bitmap.Width / standardWidth);
                         Console.WriteLine("Y坐标没有判断成功" + DateTime.Now.ToLongTimeString());
                     }
                     else
                     {
-                        centerY = (upY + downY) / 2 - 1;
+                        centerY = (upY + downY) / 2 - (int)((downY - upY) * 0.01);
                     }
                 }
 
