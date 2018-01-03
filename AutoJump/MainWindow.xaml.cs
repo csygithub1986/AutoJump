@@ -4,31 +4,22 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace AutoJump
 {
-    /// <summary>
-    /// MainWindow.xaml 的交互逻辑
-    /// </summary>
     public partial class MainWindow : Window
     {
         CmdHelper cmdHelper;
-        AdbCmdGenerator adbGenerator;
         //string lastPngFile;
         string currentPngFile = "autojump.png";
-        double jumpParam = 2.0;//弹跳系数
+        double jumpParam = 2.05;//弹跳系数
+        //double jumpParamAdjust;//弹跳系数
+        double widthHeightRate = 1.7218;//长宽比
 
         bool autoJump = false;//表示自动跳线程是否继续
 
@@ -36,24 +27,6 @@ namespace AutoJump
         {
             InitializeComponent();
             cmdHelper = new CmdHelper();
-            adbGenerator = new AdbCmdGenerator();
-        }
-
-        private void Jump(int time)
-        {
-            List<string> list = adbGenerator.SendDown(500, 500);
-            foreach (var item in list)
-            {
-                cmdHelper.WriteCmd(item);
-                Thread.Sleep(100);
-            }
-            Thread.Sleep(time > 200 ? time - 200 : time);
-            list = adbGenerator.SendUp();
-            foreach (var item in list)
-            {
-                cmdHelper.WriteCmd(item);
-                Thread.Sleep(100);
-            }
         }
 
         private void Window_Closed(object sender, EventArgs e)
@@ -74,14 +47,25 @@ namespace AutoJump
                     ScreenCap();
                     FileInfo imageFile = new FileInfo(Environment.CurrentDirectory + "/" + currentPngFile);
                     //调试用
-                    //Dispatcher.BeginInvoke(new Action(() =>
-                    //{
-                    //    imageBox.Source = new BitmapImage(new Uri(imageFile.FullName, UriKind.Absolute));
-                    //}));
+                    Dispatcher.Invoke(new Action(() =>
+                    {
+                        // 读取图片源文件到
+                        BinaryReader binReader = new BinaryReader(File.Open(imageFile.FullName, FileMode.Open));
+                        byte[] bytes = binReader.ReadBytes((int)imageFile.Length);
+                        binReader.Close();
+                        // 将图片字节赋值给BitmapImage 
+                        BitmapImage bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.StreamSource = new MemoryStream(bytes);
+                        bitmap.EndInit();
+                        imageBox.Source = bitmap;
+                    }));
+
+
                     //解析图像
-                    int upX, downX;
-                    AnalyseImage(imageFile, out upX, out downX);
-                    if (upX == -1 || downX == -1)
+                    int centerX, centerY, pieceX, pieceY;
+                    AnalyseImage(imageFile, out centerX, out centerY, out pieceX, out pieceY);
+                    if (pieceX == -1 || pieceY == -1)
                     {
                         autoJump = false;
                         MessageBox.Show("图像解析错误");
@@ -92,15 +76,23 @@ namespace AutoJump
                         });
                         return;
                     }
+                    Dispatcher.Invoke(new Action(() =>
+                    {
+                        Canvas.SetLeft(gridFrom, pieceX * 0.5);
+                        Canvas.SetTop(gridFrom, pieceY * 0.5);
+                        Canvas.SetLeft(gridTo, centerX * 0.5);
+                        Canvas.SetTop(gridTo, centerY * 0.5);
+                    }));
                     //计算时间
-                    int time = (int)(Math.Abs(upX - downX) * jumpParam);
+                    int time = (int)(Math.Sqrt((centerX - pieceX) * (centerX - pieceX) + (centerY - pieceY) * (centerY - pieceY)) * jumpParam);
                     //跳
-                    Jump(time);
+                    cmdHelper.WriteCmd("adb shell input swipe 500 500 500 700 " + time);
+
                     if (!autoJump)
                     {
                         break;
                     }
-                    Thread.Sleep(2000);
+                    Thread.Sleep(2500);
                 }
                 Dispatcher.Invoke(() =>
                 {
@@ -119,119 +111,236 @@ namespace AutoJump
         //截屏
         private void ScreenCap()
         {
-            //currentPngFile = DateTime.Now.Ticks.ToString() + ".png";
-            List<string> list = adbGenerator.ScreenCap(currentPngFile);
-            foreach (var item in list)
-            {
-                cmdHelper.WriteCmd(item);
-                Thread.Sleep(1000);
-            }
+            cmdHelper.WriteCmd("adb shell screencap -p /storage/sdcard0/autojump.png");//截图
+            Thread.Sleep(2000);
+            cmdHelper.WriteCmd("adb pull /storage/sdcard0/autojump.png " + currentPngFile);//复制
+            Thread.Sleep(1500);
         }
 
-
-        //操作图像
-        public void AnalyseImage(FileInfo imageFile, out int upX, out int downX)
+        //分析图像
+        public void AnalyseImage(FileInfo imageFile, out int centerX, out int centerY, out int pieceX, out int pieceY)
         {
-            upX = -1;
-            downX = -1;
+            centerX = -1;
+            centerY = -1;
+            pieceX = -1;
+            pieceY = -1;
             Bitmap bitmap = new Bitmap(imageFile.FullName);
             BitmapData bData = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
             unsafe
             {
-                //找“棋盘”中心
-                for (int y = 320; y < 960; y++)
+                #region 找“小人”底座中心
                 {
-                    byte* color0 = (byte*)bData.Scan0 + y * bData.Stride;
-                    int r0 = *(color0 + 2);
-                    int g0 = *(color0 + 1);
-                    int b0 = *color0;
-                    bool hasFound = false;
-                    int min = 0;
-                    int max = 0;
+                    System.Windows.Media.Color colorLeft = new System.Windows.Media.Color() { R = 43, G = 43, B = 73 };
+                    System.Windows.Media.Color colorRight = new System.Windows.Media.Color() { R = 58, G = 54, B = 81 };
+                    int leftX = 0, rightX = 0, leftY = -1, rightY = -1;
                     for (int x = 0; x < bitmap.Width; x++)
                     {
-                        byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
-                        int r = *(color + 2);
-                        int g = *(color + 1);
-                        int b = *color;
-                        if (r0 != r || g0 != g || b0 != b)
+                        for (int y = 960 - 1; y >= 640; y--)
                         {
-                            max = x;
-                            if (hasFound == false)
+                            byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                            byte r = *(color + 2);
+                            byte g = *(color + 1);
+                            byte b = *color;
+                            if (colorLeft.R == r && colorLeft.G == g && colorLeft.B == b)
                             {
-                                min = x;
-                                hasFound = true;
+                                leftX = x;
+                                leftY = y;
+                                break;
                             }
                         }
-                        else if (hasFound)
+                        if (leftY != -1)
                         {
-                            upX = (min + max) / 2;
                             break;
                         }
                     }
-                    if (hasFound)
+                    for (int x = bitmap.Width - 1; x >= 0; x--)
                     {
-                        break;
-                    }
-                }
-                //找“棋子”底座中心
-                int rLeft = 43, gLeft = 43, bLeft = 73;
-                int rRight = 58, gRight = 54, bRight = 81;
-                int leftX = 0, rightX = 0, leftY = -1, rightY = -1;
-                for (int x = 0; x < bitmap.Width; x++)
-                {
-                    for (int y = 960 - 1; y >= 640; y--)
-                    {
-                        byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
-                        int r = *(color + 2);
-                        int g = *(color + 1);
-                        int b = *color;
-                        if (rLeft == r && gLeft == g && bLeft == b)
+                        for (int y = 960 - 1; y >= 640; y--)
                         {
-                            leftX = x;
-                            leftY = y;
+                            byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                            byte r = *(color + 2);
+                            byte g = *(color + 1);
+                            byte b = *color;
+                            if (colorRight.R == r && colorRight.G == g && colorRight.B == b)
+                            {
+                                rightX = x;
+                                rightY = y;
+                                break;
+                            }
+                        }
+                        if (rightY != -1)
+                        {
                             break;
                         }
                     }
-                    if (leftY != -1)
+                    if (leftY != -1 && rightY != -1 && Math.Abs(leftY - rightY) < 5)
                     {
-                        break;
+                        pieceX = (leftX + rightX) / 2;
+                        pieceY = Math.Min(leftY, rightY);
                     }
                 }
-                for (int x = bitmap.Width - 1; x >= 0; x--)
+
+                #endregion
+
+                #region 找“盒子”X中心
                 {
-                    for (int y = 960 - 1; y >= 640; y--)
+                    int upY = 0;
+                    int leftX = 0;
+                    int rightX = 0;
+                    System.Windows.Media.Color colorMain = new System.Windows.Media.Color();
+                    for (int y = 320; y < 960; y++)
                     {
-                        byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
-                        int r = *(color + 2);
-                        int g = *(color + 1);
-                        int b = *color;
-                        if (rRight == r && gRight == g && bRight == b)
+                        byte* color0 = (byte*)bData.Scan0 + y * bData.Stride;
+                        byte r0 = *(color0 + 2);
+                        byte g0 = *(color0 + 1);
+                        byte b0 = *color0;
+                        bool hasFound = false;
+                        for (int x = 0; x < bitmap.Width; x++)
                         {
-                            rightX = x;
-                            rightY = y;
+                            byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                            byte r = *(color + 2);
+                            byte g = *(color + 1);
+                            byte b = *color;
+                            if (r0 != r || g0 != g || b0 != b)
+                            {
+                                if (Math.Abs(x - pieceX) < 25)
+                                {
+                                    //当小人的头比新“盒子”高时，把“小人”的头避开
+                                    continue;
+                                }
+                                rightX = x;
+                                if (hasFound == false)
+                                {
+                                    leftX = x;
+                                    upY = y;
+                                    hasFound = true;
+                                    //保险起见，颜色选取正中心下面一个像素的颜色
+                                    color = (byte*)bData.Scan0 + x * 3 + (y + 1) * bData.Stride;
+                                    r = *(color + 2);
+                                    g = *(color + 1);
+                                    b = *color;
+                                    colorMain.R = r;
+                                    colorMain.G = g;
+                                    colorMain.B = b;
+                                }
+                            }
+                            else if (hasFound)
+                            {
+                                centerX = (leftX + rightX) / 2;
+                                break;
+                            }
+                        }
+                        if (hasFound)
+                        {
                             break;
                         }
                     }
-                    if (rightY != -1)
+
+                    //找相同颜色的连续点（不同于一般的算法，这里只在乎边缘的连续，只往下面和两边搜索，所以会快一点）
+                    int downY = upY;
+                    List<System.Drawing.Point> lastColorList = new List<System.Drawing.Point>();
+                    for (int x = leftX; x <= rightX; x++)
                     {
-                        break;
+                        lastColorList.Add(new System.Drawing.Point(x, upY));
+                    }
+
+                    for (int y = upY + 1; y < 960; y++)
+                    {
+                        List<System.Drawing.Point> currentColorList = new List<System.Drawing.Point>();
+                        //搜索左边
+                        for (int x = lastColorList[0].X; x >= 0; x--)
+                        {
+                            byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                            if (*(color + 2) == colorMain.R && *(color + 1) == colorMain.G && *color == colorMain.B)
+                            {
+                                currentColorList.Insert(0, new System.Drawing.Point(x, y));
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        //搜索中间
+                        for (int i = 1; i < lastColorList.Count - 1; i++)
+                        {
+                            if (currentColorList.Count > 0 && lastColorList[i].X <= currentColorList.Last().X)
+                            {
+                                continue;
+                            }
+                            byte* color = (byte*)bData.Scan0 + lastColorList[i].X * 3 + y * bData.Stride;
+                            if (*(color + 2) == colorMain.R && *(color + 1) == colorMain.G && *color == colorMain.B)
+                            {
+                                currentColorList.Add(new System.Drawing.Point(lastColorList[i].X, y));
+                                for (int j = lastColorList[i].X + 1; j < lastColorList.Last().X; j++)
+                                {
+                                    byte* color2 = (byte*)bData.Scan0 + j * 3 + y * bData.Stride;
+                                    if (*(color2 + 2) == colorMain.R && *(color2 + 1) == colorMain.G && *color2 == colorMain.B)
+                                    {
+                                        currentColorList.Add(new System.Drawing.Point(j, y));
+                                    }
+                                    else
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+                        //搜索右边
+                        for (int x = lastColorList[lastColorList.Count - 1].X; x < bitmap.Width; x++)
+                        {
+                            byte* color = (byte*)bData.Scan0 + x * 3 + y * bData.Stride;
+                            if (*(color + 2) == colorMain.R && *(color + 1) == colorMain.G && *color == colorMain.B)
+                            {
+                                currentColorList.Add(new System.Drawing.Point(x, y));
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        if (currentColorList.Count == 0)
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            lastColorList = currentColorList;
+                            downY = y;
+                            if (leftX > currentColorList[0].X)
+                            {
+                                leftX = currentColorList[0].X;
+                            }
+                            if (rightX < currentColorList[currentColorList.Count - 1].X)
+                            {
+                                rightX = currentColorList[currentColorList.Count - 1].X;
+                            }
+                        }
+                    }
+
+                    //限制条件
+                    double width = rightX - leftX;
+                    double height = downY - upY;
+                    if (width > 360 || width < 45 || width / height > widthHeightRate * 1.25 || width / height < widthHeightRate / 1.25)
+                    {
+                        //判断出错，保险起见，只能以顶点为参考点，减去保守的固定值
+                        centerY = upY + 70;
+                        Console.WriteLine("Y坐标没有判断成功" + DateTime.Now.ToLongTimeString());
+                    }
+                    else
+                    {
+                        centerY = (upY + downY) / 2 - 1;
                     }
                 }
-                if (leftY != -1 && rightY != -1 && Math.Abs(leftY - rightY) < 5)
-                {
-                    downX = (leftX + rightX) / 2;
-                }
+
+                #endregion
+
             }
             bitmap.UnlockBits(bData);
             bitmap.Dispose();
         }
-    }
-
-    public struct Pixel
-    {
-        public byte B;         //
-        public byte G;        //
-        public byte R;        //
     }
 }
