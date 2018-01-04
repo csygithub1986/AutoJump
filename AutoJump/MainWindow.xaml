@@ -26,5 +26,10 @@
         </Grid>
         <Button Click="BtnStart_Click" Name="btnStart" Content="开始" Margin="40,60,0,0" Grid.Column="1" HorizontalAlignment="Left" Width="126" Height="50" VerticalAlignment="Top"/>
         <Button Click="BtnStop_Click" Name="btnStop" Content="停止" IsEnabled="False" Margin="40,157,0,0" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Width="126" Height="50"/>
+        <Slider Background="Gray" Name="slider" Grid.Column="1" HorizontalAlignment="Left" Margin="131,250,0,0" VerticalAlignment="Top" Height="290" Orientation="Vertical" Width="34" Minimum="190" Maximum="240" Value="205" SmallChange="1" SelectionEnd="240" TickPlacement="TopLeft" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"/>
+        <TextBlock Grid.Column="1" HorizontalAlignment="Left" Margin="69,356,0,0" TextWrapping="Wrap" Text="弹跳系数" VerticalAlignment="Top"/>
+        <Label Name="label" Content="205" Grid.Column="1" HorizontalAlignment="Left" Margin="76,380,0,0" VerticalAlignment="Top" RenderTransformOrigin="0.613,0.2"/>
+        <TextBlock Grid.Column="1" HorizontalAlignment="Left" Margin="142,230,0,0" TextWrapping="Wrap" Text="远" VerticalAlignment="Top"/>
+        <TextBlock Grid.Column="1" HorizontalAlignment="Left" Margin="142,547,0,0" TextWrapping="Wrap" Text="近" VerticalAlignment="Top"/>
     </Grid>
 </Window>

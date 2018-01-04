@@ -28,7 +28,9 @@ namespace AutoJump
         {
             InitializeComponent();
             cmdHelper = new CmdHelper();
+            slider.ValueChanged += slider_ValueChanged;
         }
+
 
         private void Window_Closed(object sender, EventArgs e)
         {
@@ -342,6 +344,12 @@ namespace AutoJump
             }
             bitmap.UnlockBits(bData);
             bitmap.Dispose();
+        }
+
+        private void slider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            jumpParam = slider.Value / 100;
+            label.Content = slider.Value;
         }
     }
 }
