@@ -23,6 +23,7 @@ namespace AutoJump
         double standardWidth = 720;//基准宽度
 
         bool autoJump = false;//表示自动跳线程是否继续
+        Random ran = new Random();
 
         public MainWindow()
         {
@@ -66,8 +67,8 @@ namespace AutoJump
 
 
                     //解析图像
-                    int centerX, centerY, pieceX, pieceY, imageWidth;
-                    AnalyseImage(imageFile, out centerX, out centerY, out pieceX, out pieceY, out imageWidth);
+                    int centerX, centerY, pieceX, pieceY, imageWidth, imageHeight;
+                    AnalyseImage(imageFile, out centerX, out centerY, out pieceX, out pieceY, out imageWidth, out imageHeight);
                     if (pieceX == -1 || pieceY == -1)
                     {
                         autoJump = false;
@@ -88,14 +89,19 @@ namespace AutoJump
                     }));
                     //计算时间
                     int time = (int)(Math.Sqrt((centerX - pieceX) * (centerX - pieceX) + (centerY - pieceY) * (centerY - pieceY)) * jumpParam * standardWidth / imageWidth);
-                    //跳
-                    cmdHelper.WriteCmd("adb shell input swipe 500 500 500 700 " + time);
+                    //跳（在屏幕1/4和3/4的区域随机位置）
+                    int touchX1 = ran.Next(imageWidth / 4, imageWidth * 3 / 4);
+                    int touchY1 = ran.Next(imageHeight / 4, imageHeight * 3 / 4);
+                    int touchX2 = ran.Next(imageWidth / 4, imageWidth * 3 / 4);
+                    int touchY2 = ran.Next(imageHeight / 4, imageHeight * 3 / 4);
+                    cmdHelper.WriteCmd(string.Format("adb shell input swipe {0} {1} {2} {3} {4}", touchX1, touchY1, touchX2, touchY2, time));
 
                     if (!autoJump)
                     {
                         break;
                     }
-                    Thread.Sleep(4000);
+                    int waitTime = ran.Next(3500, 4500);
+                    Thread.Sleep(waitTime);
                 }
                 Dispatcher.Invoke(() =>
                 {
@@ -120,7 +126,7 @@ namespace AutoJump
         }
 
         //分析图像
-        public void AnalyseImage(FileInfo imageFile, out int centerX, out int centerY, out int pieceX, out int pieceY, out int imageWidth)
+        public void AnalyseImage(FileInfo imageFile, out int centerX, out int centerY, out int pieceX, out int pieceY, out int imageWidth, out int imageHeight)
         {
             centerX = -1;
             centerY = -1;
@@ -129,6 +135,7 @@ namespace AutoJump
             Bitmap bitmap = new Bitmap(imageFile.FullName);
             BitmapData bData = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
             imageWidth = bitmap.Width;
+            imageHeight = bitmap.Height;
             unsafe
             {
                 #region 找“小人”底座中心
