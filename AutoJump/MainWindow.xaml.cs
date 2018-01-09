@@ -73,11 +73,11 @@ namespace AutoJump
                     {
                         autoJump = false;
                         MessageBox.Show("图像解析错误");
-                        Dispatcher.Invoke(() =>
-                        {
-                            btnStart.IsEnabled = true;
-                            btnStop.IsEnabled = false;
-                        });
+                        Dispatcher.Invoke(new Action(() =>
+                       {
+                           btnStart.IsEnabled = true;
+                           btnStop.IsEnabled = false;
+                       }));
                         return;
                     }
                     Dispatcher.Invoke(new Action(() =>
@@ -100,14 +100,14 @@ namespace AutoJump
                     {
                         break;
                     }
-                    int waitTime = ran.Next(3500, 4500);
+                    int waitTime = ran.Next(4000, 5000);
                     Thread.Sleep(waitTime);
                 }
-                Dispatcher.Invoke(() =>
+                Dispatcher.Invoke(new Action(() =>
                 {
                     btnStart.IsEnabled = true;
                     btnStop.IsEnabled = false;
-                });
+                }));
             });
         }
 
